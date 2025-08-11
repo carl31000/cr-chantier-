@@ -256,13 +256,13 @@ btnExport.addEventListener("click", async ()=>{
       new docx.TableCell({ children:[ new docx.Paragraph("Visa Client / MOA\n\nNom : ______________________    Signature : ______________________") ]})
     ]}) ]}));
 
-    const document = new docx.Document({ sections:[{ children: parts }] });
-    const blob = await docx.Packer.toBlob(document);
+    const wordDoc = new docx.Document({ sections:[{ children: parts }] });
+    const blob = await docx.Packer.toBlob(wordDoc);
 
     const url = URL.createObjectURL(blob);
     const a=document.createElement("a");
     a.href=url; a.download=(H.siteName||"CR-chantier")+".docx"; a.rel="noopener";
-    document.body.appendChild(a); a.click();
+    window.document.body.appendChild(a); a.click();
     setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 3000);
   }catch(err){
     alert("Erreur export Word : " + (err?.message||err));
