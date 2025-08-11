@@ -97,13 +97,28 @@
 
 <div id="toast">Génération du Word…</div>
 
-<!-- docx.js chargée avec onload + intégrité -->
-<script
-  src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.js"
-  integrity="sha512-sR3r1q2dW5pJ2aT54Jb6f4c2jU8h7h9T4CU3f8wV8QxB0zH3UoRj0P8aO1vJfM0m8mQm1pGx3b6mU5E1H2qgNQ=="
-  crossorigin="anonymous"
-  onload="window.__docxReady = true"
-  defer>
+<!-- Chargement dynamique de docx avec fallback -->
+<script>
+window.__docxReady = false;
+(async function loadDocx(){
+  const urls = [
+    "https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.js",
+    "https://unpkg.com/docx@8.5.0/build/index.umd.js"
+  ];
+  for (const u of urls){
+    try{
+      await new Promise((res, rej)=>{
+        const s=document.createElement("script");
+        s.src=u; s.defer=true;
+        s.onload=()=>res();
+        s.onerror=()=>rej(new Error("fail "+u));
+        document.head.appendChild(s);
+      });
+      if (window.docx && window.docx.Document){ window.__docxReady = true; break; }
+    }catch(e){}
+  }
+})();
 </script>
 
 <script>
@@ -111,11 +126,9 @@ const $ = s=>document.querySelector(s);
 const state = { header:{siteName:"",crDate:"",clientName:"",leader:""}, items:[], bufferPhotos:[] };
 const btnExport = $("#btnExport");
 const toast = $("#toast");
-
 function showToast(msg){ toast.textContent=msg; toast.style.display="block"; setTimeout(()=>toast.style.display="none", 1800); }
 
-/* ---- Lib readiness: attend que docx.js soit prêt ---- */
-function waitForDocx(timeoutMs=8000){
+function waitForDocx(timeoutMs=10000){
   return new Promise((resolve, reject)=>{
     const start = Date.now();
     const tick = ()=>{
@@ -127,16 +140,16 @@ function waitForDocx(timeoutMs=8000){
   });
 }
 
-/* Dès que la lib est prête, on active le bouton */
+/* Active le bouton quand la lib est prête */
 waitForDocx().then(()=>{
   btnExport.textContent = "Exporter en Word";
   btnExport.disabled = false;
 }).catch(()=>{
   btnExport.textContent = "Réessayer (lib en cours)";
-  btnExport.disabled = false; // on laisse cliquer, on vérifiera à l’exécution
+  btnExport.disabled = false;
 });
 
-/* ---- Photos preview ---- */
+/* Photos preview */
 $("#photos").addEventListener("change",(e)=>{
   const wrap=$("#thumbs"); wrap.innerHTML=""; state.bufferPhotos=[];
   Array.from(e.target.files).slice(0,6).forEach(file=>{
@@ -147,7 +160,7 @@ $("#photos").addEventListener("change",(e)=>{
   });
 });
 
-/* ---- Ajouter / éditer les lots ---- */
+/* Ajouter / éditer */
 $("#btnAdd").addEventListener("click", ()=>{
   const lot=$("#lotName").value.trim(); if(!lot){ alert("Nom du lot requis."); return; }
   const it={ id:Date.now().toString(36), lot, comment:$("#comment").value.trim(), deadline:$("#deadline").value, photos:[...state.bufferPhotos] };
@@ -186,20 +199,20 @@ function renderItems(){
 }
 ["siteName","crDate","clientName","leader"].forEach(id=> $("#"+id).addEventListener("input",()=> state.header[id]=$("#"+id).value ));
 
-/* ---- Utilitaires ---- */
+/* Utils */
 async function dataURLToArrayBuffer(dataURL){ const res=await fetch(dataURL); const blob=await res.blob(); return await blob.arrayBuffer(); }
 
-/* ---- Export DOCX (safe load + iPhone) ---- */
+/* Export DOCX */
 btnExport.addEventListener("click", async ()=>{
   try{
     btnExport.disabled = true;
     btnExport.textContent = "Préparation…";
-    const docx = await waitForDocx().catch(()=>window.docx); // tente encore au clic
+    const docx = await waitForDocx().catch(()=>window.docx);
     if(!docx || !docx.Document){ alert("La librairie Word n'est pas encore prête. Réessaie dans 2 secondes."); btnExport.disabled=false; btnExport.textContent="Exporter en Word"; return; }
 
     if(!state.items.length){ alert("Ajoute au moins un lot avant l’export."); btnExport.disabled=false; btnExport.textContent="Exporter en Word"; return; }
     showToast("Génération du Word…");
-    await new Promise(r=>setTimeout(r, 400)); // laisse finir le chargement d’éventuelles images
+    await new Promise(r=>setTimeout(r, 400));
 
     const parts=[];
     parts.push(new docx.Paragraph({ text:"COMPTE RENDU CHANTIER", heading:docx.HeadingLevel.HEADING_1, alignment:docx.AlignmentType.CENTER }));
@@ -246,14 +259,10 @@ btnExport.addEventListener("click", async ()=>{
     const document = new docx.Document({ sections:[{ children: parts }] });
     const blob = await docx.Packer.toBlob(document);
 
-    // Téléchargement compatible mobile
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = (H.siteName || "CR-chantier") + ".docx";
-    a.rel="noopener";
-    document.body.appendChild(a);
-    a.click();
+    const a=document.createElement("a");
+    a.href=url; a.download=(H.siteName||"CR-chantier")+".docx"; a.rel="noopener";
+    document.body.appendChild(a); a.click();
     setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 3000);
   }catch(err){
     alert("Erreur export Word : " + (err?.message||err));
