@@ -2,8 +2,8 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CR Chantier – Lots consécutifs (Word uniquement)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CR Chantier – Export Word</title>
 <style>
   :root{--bg:#0b0d10;--ink:#e9eef7;--muted:#a9b4c0;--card:#14181d;--line:#26303a;--acc:#4ea1ff}
   *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto}
@@ -26,13 +26,14 @@
   .btn.primary{background:var(--acc);border-color:var(--acc);color:#001a33}
   .btn.warn{background:#ffb020;border-color:#ffb020;color:#331f00}
   .muted{color:var(--muted);font-size:.9rem}
+  #toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#1f2937;color:#fff;padding:.6rem .9rem;border-radius:10px;display:none}
 </style>
 </head>
 <body>
 <header>
   <div class="row">
     <h1>CR Chantier – Second œuvre (Word)</h1>
-    <div style="margin-left:auto">
+    <div style="margin-left:auto" class="actions">
       <button id="btnExport" class="btn primary" style="width:auto">Exporter en Word</button>
     </div>
   </div>
@@ -89,14 +90,22 @@
   <section class="card">
     <h3 style="margin:0 0 .5rem">Lots saisis</h3>
     <div id="items" class="items"></div>
+    <p class="muted">Astuce : “Modifier” pour reprendre un lot ; “Supprimer” pour l’enlever.</p>
   </section>
 </main>
 
+<div id="toast">Génération du Word…</div>
+
+<!-- Librairie DOCX -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.js"></script>
 <script>
 const $ = s=>document.querySelector(s);
 const state = { header:{siteName:"",crDate:"",clientName:"",leader:""}, items:[], bufferPhotos:[] };
 
+const toast = $("#toast");
+function showToast(msg){ toast.textContent=msg; toast.style.display="block"; setTimeout(()=>toast.style.display="none", 2000); }
+
+/* ---- Aperçu des photos ---- */
 $("#photos").addEventListener("change",(e)=>{
   const wrap=$("#thumbs"); wrap.innerHTML=""; state.bufferPhotos=[];
   Array.from(e.target.files).slice(0,6).forEach(file=>{
@@ -107,10 +116,12 @@ $("#photos").addEventListener("change",(e)=>{
   });
 });
 
+/* ---- Ajouter / éditer les lots ---- */
 $("#btnAdd").addEventListener("click", ()=>{
-  const lot=$("#lotName").value.trim(); if(!lot) return alert("Nom du lot requis.");
+  const lot=$("#lotName").value.trim(); if(!lot){ alert("Nom du lot requis."); return; }
   const it={ id:Date.now().toString(36), lot, comment:$("#comment").value.trim(), deadline:$("#deadline").value, photos:[...state.bufferPhotos] };
-  state.items.push(it); state.bufferPhotos=[]; $("#thumbs").innerHTML=""; $("#lotName").value=""; $("#comment").value=""; $("#deadline").value=""; $("#photos").value="";
+  state.items.push(it);
+  state.bufferPhotos=[]; $("#thumbs").innerHTML=""; $("#lotName").value=""; $("#comment").value=""; $("#deadline").value=""; $("#photos").value="";
   renderItems();
 });
 $("#btnReset").addEventListener("click", ()=>{ state.bufferPhotos=[]; $("#thumbs").innerHTML=""; $("#comment").value=""; $("#deadline").value=""; $("#lotName").value=""; $("#photos").value=""; });
@@ -144,54 +155,75 @@ function renderItems(){
 }
 ["siteName","crDate","clientName","leader"].forEach(id=> $("#"+id).addEventListener("input",()=> state.header[id]=$("#"+id).value ));
 
+/* ---- Utilitaires ---- */
 async function dataURLToArrayBuffer(dataURL){ const res=await fetch(dataURL); const blob=await res.blob(); return await blob.arrayBuffer(); }
 
+/* ---- Export DOCX (iPhone/Android/PC) ---- */
 $("#btnExport").addEventListener("click", async ()=>{
-  const docx=window.docx; const children=[];
-  children.push(new docx.Paragraph({ text:"COMPTE RENDU CHANTIER", heading:docx.HeadingLevel.HEADING_1, alignment:docx.AlignmentType.CENTER }));
-  children.push(new docx.Paragraph({ text:"Second œuvre", alignment:docx.AlignmentType.CENTER }));
-  children.push(new docx.Paragraph({}));
-  const H=state.header;
-  children.push(new docx.Table({ rows:[
-    new docx.TableRow({ children:[
-      new docx.TableCell({ children:[ new docx.Paragraph({ children:[ new docx.TextRun({text:"Chantier : ",bold:true}), new docx.TextRun({text:H.siteName||"—"}) ]}) ]}),
-      new docx.TableCell({ children:[ new docx.Paragraph({ children:[ new docx.TextRun({text:"Client : ",bold:true}), new docx.TextRun({text:H.clientName||"—"}) ]}) ]})
-    ]}),
-    new docx.TableRow({ children:[
-      new docx.TableCell({ children:[ new docx.Paragraph({ children:[ new docx.TextRun({text:"Date : ",bold:true}), new docx.TextRun({text:(H.crDate||new Date().toLocaleDateString("fr-FR"))}) ]}) ]}),
-      new docx.TableCell({ children:[ new docx.Paragraph({ children:[ new docx.TextRun({text:"Conducteur : ",bold:true}), new docx.TextRun({text:H.leader||"—"}) ]}) ]})
-    ]})
-  ]}));
-  children.push(new docx.Paragraph({}));
+  try{
+    if(!state.items.length){ alert("Ajoute au moins un lot avant l’export."); return; }
+    showToast("Génération du Word…");
+    // Petit délai pour laisser finir le chargement d’images (mobile)
+    await new Promise(r=>setTimeout(r, 400));
 
-  for(let i=0;i<state.items.length;i++){
-    const it=state.items[i]; const d=it.deadline?new Date(it.deadline).toLocaleDateString("fr-FR"):"—";
-    children.push(new docx.Paragraph({ text:`${i+1}. ${it.lot}`, heading:docx.HeadingLevel.HEADING_2 }));
-    children.push(new docx.Paragraph({ children:[ new docx.TextRun({text:"Délai : ",bold:true}), new docx.TextRun({text:d}) ]}));
-    children.push(new docx.Paragraph({ children:[ new docx.TextRun({text:"Commentaire :",bold:true}) ]}));
-    children.push(new docx.Paragraph({ text: it.comment || "—" }));
-    if((it.photos||[]).length){
-      children.push(new docx.Paragraph({ children:[ new docx.TextRun({text:"Photos :",bold:true}) ]}));
-      for(let j=0;j<it.photos.length;j+=2){
-        const row=it.photos.slice(j,j+2); const cells=[];
-        for(const src of row){ const ab=await dataURLToArrayBuffer(src);
-          cells.push(new docx.TableCell({ children:[ new docx.Paragraph({ children:[ new docx.ImageRun({ data:ab, transformation:{ width:300, height:200 } }) ] }) ] }));
-        }
-        while(cells.length<2) cells.push(new docx.TableCell({ children:[ new docx.Paragraph(" ") ] }));
-        children.push(new docx.Table({ rows:[ new docx.TableRow({ children:cells }) ] }));
-      }
-    }
+    const docx = window.docx; const children=[];
+    children.push(new docx.Paragraph({ text:"COMPTE RENDU CHANTIER", heading:docx.HeadingLevel.HEADING_1, alignment:docx.AlignmentType.CENTER }));
+    children.push(new docx.Paragraph({ text:"Second œuvre", alignment:docx.AlignmentType.CENTER }));
     children.push(new docx.Paragraph({}));
+
+    const H=state.header;
+    children.push(new docx.Table({ rows:[
+      new docx.TableRow({ children:[
+        new docx.TableCell({ children:[ new docx.Paragraph({ children:[ new docx.TextRun({text:"Chantier : ",bold:true}), new docx.TextRun({text:H.siteName||"—"}) ]}) ]}),
+        new docx.TableCell({ children:[ new docx.Paragraph({ children:[ new docx.TextRun({text:"Client : ",bold:true}), new docx.TextRun({text:H.clientName||"—"}) ]}) ]})
+      ]}),
+      new docx.TableRow({ children:[
+        new docx.TableCell({ children:[ new docx.Paragraph({ children:[ new docx.TextRun({text:"Date : ",bold:true}), new docx.TextRun({text:(H.crDate||new Date().toLocaleDateString("fr-FR"))}) ]}) ]}),
+        new docx.TableCell({ children:[ new docx.Paragraph({ children:[ new docx.TextRun({text:"Conducteur : ",bold:true}), new docx.TextRun({text:H.leader||"—"}) ]}) ]})
+      ]})
+    ]}));
+    children.push(new docx.Paragraph({}));
+
+    for(let i=0;i<state.items.length;i++){
+      const it=state.items[i]; const d=it.deadline?new Date(it.deadline).toLocaleDateString("fr-FR"):"—";
+      children.push(new docx.Paragraph({ text:`${i+1}. ${it.lot}`, heading:docx.HeadingLevel.HEADING_2 }));
+      children.push(new docx.Paragraph({ children:[ new docx.TextRun({text:"Délai : ",bold:true}), new docx.TextRun({text:d}) ]}));
+      children.push(new docx.Paragraph({ children:[ new docx.TextRun({text:"Commentaire :",bold:true}) ]}));
+      children.push(new docx.Paragraph({ text: it.comment || "—" }));
+      if((it.photos||[]).length){
+        children.push(new docx.Paragraph({ children:[ new docx.TextRun({text:"Photos :",bold:true}) ]}));
+        for(let j=0;j<it.photos.length;j+=2){
+          const row=it.photos.slice(j,j+2); const cells=[];
+          for(const src of row){ const ab=await dataURLToArrayBuffer(src);
+            cells.push(new docx.TableCell({ children:[ new docx.Paragraph({ children:[ new docx.ImageRun({ data:ab, transformation:{ width:300, height:200 } }) ] }) ] }));
+          }
+          while(cells.length<2) cells.push(new docx.TableCell({ children:[ new docx.Paragraph(" ") ] }));
+          children.push(new docx.Table({ rows:[ new docx.TableRow({ children:cells }) ] }));
+        }
+      }
+      children.push(new docx.Paragraph({}));
+    }
+    children.push(new docx.Table({ rows:[ new docx.TableRow({ children:[
+      new docx.TableCell({ children:[ new docx.Paragraph("Visa Conducteur / Entreprise\n\nNom : ______________________    Signature : ______________________") ]}),
+      new docx.TableCell({ children:[ new docx.Paragraph("Visa Client / MOA\n\nNom : ______________________    Signature : ______________________") ]})
+    ]}) ]}));
+
+    const doc=new docx.Document({ sections:[{ children }] });
+    const blob=await docx.Packer.toBlob(doc);
+
+    // Téléchargement compatible mobile
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=(H.siteName || "CR-chantier") + ".docx";
+    a.rel="noopener";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 3000);
+  }catch(err){
+    alert("Erreur export Word : " + (err?.message||err));
+    console.error(err);
   }
-  children.push(new docx.Table({ rows:[ new docx.TableRow({ children:[
-    new docx.TableCell({ children:[ new docx.Paragraph("Visa Conducteur / Entreprise\n\nNom : ______________________    Signature : ______________________") ]}),
-    new docx.TableCell({ children:[ new docx.Paragraph("Visa Client / MOA\n\nNom : ______________________    Signature : ______________________") ]})
-  ]}) ]}));
-  const doc=new docx.Document({ sections:[{ children }] });
-  const blob=await docx.Packer.toBlob(doc);
-  const url=URL.createObjectURL(blob); const a=document.createElement("a");
-  a.href=url; a.download=(H.siteName||"CR-chantier")+".docx"; document.body.appendChild(a); a.click();
-  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 2000);
 });
 </script>
 </body>
