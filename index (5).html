@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CR Chantier – Lots consécutifs (Word uniquement)</title>
+<style>
+  :root{--bg:#0b0d10;--ink:#e9eef7;--muted:#a9b4c0;--card:#14181d;--line:#26303a;--acc:#4ea1ff}
+  *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto}
+  header{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#0b0d10,rgba(11,13,16,.85));border-bottom:1px solid #1e242b}
+  header .row{max-width:960px;margin:auto;padding:.8rem 1rem;display:flex;gap:.75rem;align-items:center}
+  header h1{margin:0;font-size:1rem}
+  main{max-width:960px;margin:auto;padding:1rem;display:grid;gap:1rem}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1rem}
+  label{display:block;color:var(--muted);font-size:.9rem;margin:.35rem 0 .2rem}
+  input,textarea,select,button{width:100%;background:#0f1317;border:1px solid var(--line);color:var(--ink);padding:.7rem;border-radius:12px}
+  textarea{min-height:100px;resize:vertical}
+  .row{display:grid;gap:.75rem}
+  @media(min-width:720px){.row{grid-template-columns:1fr 1fr}}
+  .items{display:grid;gap:.75rem}
+  .item{border:1px dashed #2a3440;border-radius:12px;padding:.8rem}
+  .item h4{margin:.2rem 0 .6rem;font-size:1rem}
+  .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.5rem}
+  .thumb img{width:100%;height:110px;object-fit:cover;border-radius:10px;border:1px solid #2a3440}
+  .actions{display:flex;gap:.5rem;flex-wrap:wrap}
+  .btn.primary{background:var(--acc);border-color:var(--acc);color:#001a33}
+  .btn.warn{background:#ffb020;border-color:#ffb020;color:#331f00}
+  .muted{color:var(--muted);font-size:.9rem}
+  .bar{display:flex;gap:.5rem;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <h1>CR Chantier – Second œuvre (Word)</h1>
+    <div style="margin-left:auto" class="bar">
+      <button id="btnExport" class="btn primary" style="width:auto">Exporter en Word</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="card">
+    <div class="row">
+      <div>
+        <label>Nom du chantier</label>
+        <input id="siteName" placeholder="Ex. SALVIGNOL – Appartement T3">
+      </div>
+      <div>
+        <label>Date</label>
+        <input id="crDate" type="date">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Client</label>
+        <input id="clientName" placeholder="Nom du client / Société">
+      </div>
+      <div>
+        <label>Conducteur</label>
+        <input id="leader" placeholder="Nom du conducteur de travaux">
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3 style="margin:0 0 .5rem">Ajouter un lot (poste) à la suite</h3>
+    <div class="row">
+      <div>
+        <label>Nom du lot / poste</label>
+        <input id="lotName" placeholder="Ex. Électricité, Plomberie, Peinture...">
+      </div>
+      <div>
+        <label>Échéance / délai (facultatif)</label>
+        <input id="deadline" type="date">
+      </div>
+    </div>
+    <label>Commentaire</label>
+    <textarea id="comment" placeholder="Ex. Déplacer le point lumineux de 30 cm vers la gauche."></textarea>
+    <label>Photos du lot (0 à 6)</label>
+    <input id="photos" type="file" accept="image/*" capture="environment" multiple>
+    <div class="thumbs" id="thumbs"></div>
+    <div class="actions" style="margin-top:.75rem">
+      <button id="btnAdd" class="btn primary">➕ Ajouter ce lot au CR</button>
+      <button id="btnReset" class="btn warn">Réinitialiser le formulaire</button>
+    </div>
+    <p class="muted" style="margin:.5rem 0 0">Ajoute autant de lots que nécessaire. Ils seront exportés **dans l'ordre**.</p>
+  </section>
+
+  <section class="card">
+    <h3 style="margin:0 0 .5rem">Lots saisis</h3>
+    <div id="items" class="items"></div>
+    <p class="muted">Astuce : touche “Modifier” pour reprendre un lot ; “Supprimer” pour l’enlever.</p>
+  </section>
+</main>
+
+<!-- docx.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.js"></script>
+
+<script>
+const $ = (s)=>document.querySelector(s);
+const state = { header:{siteName:"", crDate:"", clientName:"", leader:""}, items:[], bufferPhotos:[] };
+
+/* ---- Photos preview ---- */
+$("#photos").addEventListener("change",(e)=>{
+  const wrap = $("#thumbs"); wrap.innerHTML="";
+  state.bufferPhotos = [];
+  const files = Array.from(e.target.files).slice(0,6);
+  files.forEach(file=>{
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const src = ev.target.result;
+      state.bufferPhotos.push(src);
+      const cell = document.createElement("div");
+      cell.className="thumb";
+      cell.innerHTML = `<img src="${src}">`;
+      wrap.appendChild(cell);
+    };
+    reader.readAsDataURL(file);
+  });
+});
+
+/* ---- Ajouter lot ---- */
+$("#btnAdd").addEventListener("click", ()=>{
+  const lot = $("#lotName").value.trim();
+  const comment = $("#comment").value.trim();
+  const deadline = $("#deadline").value;
+  if(!lot){ alert("Nom du lot requis."); return; }
+  const item = { id:Date.now().toString(36), lot, comment, deadline, photos:[...state.bufferPhotos] };
+  state.items.push(item);
+  state.bufferPhotos = [];
+  $("#thumbs").innerHTML = "";
+  $("#lotName").value=""; $("#comment").value=""; $("#deadline").value=""; $("#photos").value="";
+  renderItems();
+});
+
+$("#btnReset").addEventListener("click", ()=>{
+  state.bufferPhotos=[]; $("#thumbs").innerHTML=""; $("#comment").value=""; $("#deadline").value=""; $("#lotName").value=""; $("#photos").value="";
+});
+
+/* ---- Rendu liste ---- */
+function renderItems(){
+  const box = $("#items"); box.innerHTML="";
+  state.items.forEach((it,idx)=>{
+    const card = document.createElement("div");
+    card.className="item";
+    const deadline = it.deadline ? new Date(it.deadline).toLocaleDateString("fr-FR") : "—";
+    card.innerHTML = `
+      <h4>${idx+1}. ${it.lot}</h4>
+      <div class="muted">Délai : ${deadline}</div>
+      <div style="white-space:pre-wrap;margin:.35rem 0">${it.comment||"—"}</div>
+      <div class="thumbs" style="margin-top:.35rem">${(it.photos||[]).map(p=>`<div class="thumb"><img src="${p}"></div>`).join("")}</div>
+      <div class="actions" style="margin-top:.6rem">
+        <button class="btn" data-act="edit" data-id="${it.id}">Modifier</button>
+        <button class="btn warn" data-act="del" data-id="${it.id}">Supprimer</button>
+      </div>
+    `;
+    box.appendChild(card);
+  });
+  box.querySelectorAll("[data-act]").forEach(btn=>{
+    btn.onclick = (e)=>{
+      const id = e.currentTarget.getAttribute("data-id");
+      if(e.currentTarget.getAttribute("data-act")==="del"){
+        state.items = state.items.filter(x=>x.id!==id);
+        renderItems();
+      }else{
+        const it = state.items.find(x=>x.id===id);
+        if(!it) return;
+        $("#lotName").value=it.lot;
+        $("#comment").value=it.comment;
+        $("#deadline").value=it.deadline||"";
+        $("#photos").value="";
+        $("#thumbs").innerHTML="";
+        state.bufferPhotos=[...it.photos];
+        it.photos.forEach(src=>{
+          const cell=document.createElement("div"); cell.className="thumb"; cell.innerHTML=`<img src="${src}">`; $("#thumbs").appendChild(cell);
+        });
+        state.items = state.items.filter(x=>x.id!==id);
+        renderItems();
+        window.scrollTo({top:0,behavior:"smooth"});
+      }
+    };
+  });
+}
+renderItems();
+
+/* ---- Bind header ---- */
+["siteName","crDate","clientName","leader"].forEach(id=>{
+  $("#"+id).addEventListener("input", ()=>{ state.header[id] = $("#"+id).value; });
+});
+
+/* ---- Export DOCX avec images ---- */
+async function dataURLToArrayBuffer(dataURL){
+  const res = await fetch(dataURL);
+  const blob = await res.blob();
+  return await blob.arrayBuffer();
+}
+
+$("#btnExport").addEventListener("click", async ()=>{
+  const docx = window.docx;
+  const children = [];
+
+  // Titre + en-tête simples (sans logo)
+  children.push(new docx.Paragraph({ text:"COMPTE RENDU CHANTIER", heading:docx.HeadingLevel.HEADING_1, alignment:docx.AlignmentType.CENTER }));
+  children.push(new docx.Paragraph({ text:"Second œuvre", alignment:docx.AlignmentType.CENTER }));
+  children.push(new docx.Paragraph({}));
+
+  const H = state.header;
+  const infoTable = new docx.Table({
+    rows: [
+      new docx.TableRow({ children:[
+        new docx.TableCell({ children:[new docx.Paragraph({ children:[new docx.TextRun({text:"Chantier : ", bold:true}), new docx.TextRun({text:H.siteName||"—"})] }) ] }),
+        new docx.TableCell({ children:[new docx.Paragraph({ children:[new docx.TextRun({text:"Client : ", bold:true}), new docx.TextRun({text:H.clientName||"—"})] }) ] })
+      ]}),
+      new docx.TableRow({ children:[
+        new docx.TableCell({ children:[new docx.Paragraph({ children:[new docx.TextRun({text:"Date : ", bold:true}), new docx.TextRun({text:(H.crDate||new Date().toLocaleDateString("fr-FR"))})] }) ] }),
+        new docx.TableCell({ children:[new docx.Paragraph({ children:[new docx.TextRun({text:"Conducteur : ", bold:true}), new docx.TextRun({text:H.leader||"—"})] }) ] })
+      ]})
+    ]
+  });
+  children.push(infoTable);
+  children.push(new docx.Paragraph({}));
+
+  // Lots consécutifs
+  for(let i=0;i<state.items.length;i++){
+    const it = state.items[i];
+    const deadlineTxt = it.deadline ? new Date(it.deadline).toLocaleDateString("fr-FR") : "—";
+    children.push(new docx.Paragraph({ text:`${i+1}. ${it.lot}`, heading:docx.HeadingLevel.HEADING_2 }));
+    children.push(new docx.Paragraph({ children:[ new docx.TextRun({text:"Délai : ", bold:true}), new docx.TextRun({text:deadlineTxt}) ] }));
+    children.push(new docx.Paragraph({ children:[ new docx.TextRun({text:"Commentaire :", bold:true}) ] }));
+    children.push(new docx.Paragraph({ text: it.comment || "—" }));
+
+    if((it.photos||[]).length){
+      children.push(new docx.Paragraph({ children:[ new docx.TextRun({text:"Photos :", bold:true}) ] }));
+      // Insère jusqu'à 6 photos, 2 par ligne
+      for(let j=0;j<it.photos.length;j+=2){
+        const rowImgs = it.photos.slice(j, j+2);
+        const cells = [];
+        for(let k=0;k<rowImgs.length;k++){
+          const ab = await dataURLToArrayBuffer(rowImgs[k]);
+          cells.push(new docx.TableCell({ children:[
+            new docx.Paragraph({ children:[ new docx.ImageRun({ data: ab, transformation:{ width:300, height:200 } }) ] })
+          ]}));
+        }
+        // si une seule image dans la dernière ligne, ajoute une cellule vide pour garder l'équilibre
+        while(cells.length<2) cells.push(new docx.TableCell({ children:[ new docx.Paragraph(" ") ] }));
+        children.push(new docx.Table({ rows:[ new docx.TableRow({ children: cells }) ] }));
+      }
+    }
+    children.push(new docx.Paragraph({}));
+  }
+
+  // Signatures
+  children.push(new docx.Table({ rows:[ new docx.TableRow({ children:[
+    new docx.TableCell({ children:[ new docx.Paragraph("Visa Conducteur / Entreprise\n\nNom : ______________________    Signature : ______________________") ]}),
+    new docx.TableCell({ children:[ new docx.Paragraph("Visa Client / MOA\n\nNom : ______________________    Signature : ______________________") ]})
+  ]}) ] }));
+
+  const doc = new docx.Document({ sections:[{ children }] });
+  const blob = await docx.Packer.toBlob(doc);
+
+  // iPhone-friendly download
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = (H.siteName || "CR-chantier") + ".docx";
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 3000);
+});
+</script>
+</body>
+</html>
