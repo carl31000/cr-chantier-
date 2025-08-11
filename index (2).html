@@ -1,0 +1,163 @@
+
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CR Chantier – PDF fiable</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;background:#0b0d10;color:#e9eef7}
+  header{position:sticky;top:0;background:linear-gradient(180deg,#0b0d10,rgba(11,13,16,.85));border-bottom:1px solid #1e242b;padding:.75rem 1rem;z-index:10}
+  main{max-width:980px;margin:auto;padding:1rem;display:grid;gap:1rem}
+  .card{background:#14181d;border:1px solid #1e242b;border-radius:14px;padding:1rem}
+  input,textarea,button{width:100%;background:#0f1317;border:1px solid #26303a;border-radius:10px;padding:.6rem;color:#e9eef7}
+  textarea{min-height:90px}
+  .row{display:grid;gap:.75rem}
+  @media(min-width:720px){.row{grid-template-columns:1fr 1fr}}
+  .items{display:grid;gap:.75rem}
+  .item{border:1px dashed #2a3440;border-radius:12px;padding:.75rem}
+  .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.5rem}
+  .thumb img{width:100%;height:100%;object-fit:cover;border-radius:8px;border:1px solid #2a3440}
+  .actions{display:flex;gap:.5rem;flex-wrap:wrap}
+  .btn.primary{background:#4ea1ff;border-color:#4ea1ff;color:#001a33}
+  .muted{color:#a9b4c0;font-size:.9rem}
+  /* Printable area visuals (white background for capture) */
+  #printArea{background:#fff;color:#111;border-radius:12px;padding:18px}
+  #printArea h3{margin:14px 0 6px;border-left:4px solid #111;padding-left:8px}
+  #printArea .block{border:1px solid #ddd;border-radius:10px;padding:10px;margin:8px 0;background:#fff}
+  #printArea .photos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
+  #printArea .photos img{width:100%;height:auto;border:1px solid #ddd;border-radius:8px}
+</style>
+</head>
+<body>
+<header>
+  <div style="max-width:980px;margin:auto;display:flex;gap:10px;align-items:center">
+    <strong>CR Chantier – Habitat & Rénovation</strong>
+    <span style="margin-left:auto" class="actions">
+      <button class="btn primary" id="btnPdf" style="width:auto">Exporter PDF</button>
+    </span>
+  </div>
+</header>
+
+<main>
+  <!-- Formulaire minimal -->
+  <section class="card">
+    <div class="row">
+      <div><label>Nom du chantier</label><input id="siteName" placeholder="Ex. SALVIGNOL – Appartement T3"></div>
+      <div><label>Client</label><input id="clientName" placeholder="Nom du client / Société"></div>
+    </div>
+    <div class="row">
+      <div><label>Adresse</label><input id="address" placeholder="Adresse chantier"></div>
+      <div><label>Date</label><input id="crDate" type="date"></div>
+    </div>
+    <div><label>Commentaire</label><textarea id="comment" placeholder="Résumé / remarques générales..."></textarea></div>
+    <div><label>Photos (ajoute plusieurs)</label><input id="photos" type="file" multiple accept="image/*" capture="environment"></div>
+    <div class="muted">Astuce : les photos ajoutées ici apparaîtront aussi dans le PDF.</div>
+  </section>
+
+  <!-- Aperçu imprimable capturé pour le PDF -->
+  <section id="printArea" class="card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:8px">
+      <div style="display:flex;gap:10px;align-items:center">
+        <div style="width:40px;height:40px;border-radius:6px;border:1px solid #eee;background:#0aa;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold">H&R</div>
+        <div>
+          <div style="font-weight:700">Habitat & Rénovation</div>
+          <div style="font-size:12px;color:#444">Téléphone: 06 00 00 00 00 • contact@habitatetrenovation.com</div>
+        </div>
+      </div>
+      <div id="headerInfo" style="text-align:right;font-size:12px;color:#333"></div>
+    </div>
+    <div id="photosBlock"></div>
+  </section>
+
+  <p class="muted">Le PDF est généré à partir du bloc blanc ci-dessus (exactement ce que tu vois).</p>
+</main>
+
+<!-- libs -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+<script>
+// Met à jour l'aperçu imprimable
+const fmt = (s)=> (s&&s.trim()) || "—";
+function refreshPreview(){
+  document.getElementById("headerInfo").innerHTML = `
+    <div><b>Chantier</b> : ${fmt(document.getElementById("siteName").value)}</div>
+    <div><b>Client</b> : ${fmt(document.getElementById("clientName").value)}</div>
+    <div><b>Adresse</b> : ${fmt(document.getElementById("address").value)}</div>
+    <div><b>Date</b> : ${fmt(document.getElementById("crDate").value || new Date().toLocaleDateString("fr-FR"))}</div>
+  `;
+  const photosWrap = document.getElementById("photosBlock");
+  const comment = document.getElementById("comment").value.trim();
+  photosWrap.innerHTML = `
+    ${comment ? `<div class="block" style="white-space:pre-wrap">${comment}</div>` : ""}
+    <h3>Photos</h3>
+    <div class="block"><div class="photos" id="photosGrid"></div></div>
+  `;
+}
+["siteName","clientName","address","crDate","comment"].forEach(id => {
+  document.getElementById(id).addEventListener("input", refreshPreview);
+});
+refreshPreview();
+
+// Affiche les photos choisies dans l'aperçu (donc aussi dans le PDF)
+document.getElementById("photos").addEventListener("change", (e)=>{
+  const grid = document.getElementById("photosGrid");
+  grid.innerHTML = "";
+  Array.from(e.target.files).forEach(file=>{
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = new Image();
+      img.src = ev.target.result;
+      img.onload = ()=> grid.appendChild(img);
+    };
+    reader.readAsDataURL(file);
+  });
+});
+
+// Export PDF fiable (html2canvas + pagination A4)
+document.getElementById("btnPdf").addEventListener("click", async ()=>{
+  const area = document.getElementById("printArea");
+  // laisse le temps aux images de se charger
+  await new Promise(r => setTimeout(r, 200));
+  const canvas = await html2canvas(area, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit:"pt", format:"a4" });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const margin = 20; // pt
+  const targetW = pageW - margin*2;
+  const ratio = canvas.width / canvas.height;
+  const targetH = targetW / ratio;
+
+  // Si le rendu tient sur une page
+  if (targetH <= pageH - margin*2) {
+    pdf.addImage(canvas.toDataURL("image/jpeg", .95), "JPEG", margin, margin, targetW, targetH);
+  } else {
+    // Pagination : on découpe le grand canvas en morceaux hauteur-page
+    const sliceH = Math.floor((pageH - margin*2) * (canvas.width / targetW)); // hauteur en px correspondant à une page utile
+    let y = 0;
+    let page = 0;
+    while (y < canvas.height) {
+      const partH = Math.min(sliceH, canvas.height - y);
+      const pageCanvas = document.createElement("canvas");
+      pageCanvas.width = canvas.width;
+      pageCanvas.height = partH;
+      const ctx = pageCanvas.getContext("2d");
+      ctx.drawImage(canvas, 0, y, canvas.width, partH, 0, 0, canvas.width, partH);
+      const img = pageCanvas.toDataURL("image/jpeg", .95);
+      if (page > 0) pdf.addPage();
+      const h = targetW * (partH / canvas.width);
+      pdf.addImage(img, "JPEG", margin, margin, targetW, h);
+      y += partH;
+      page++;
+    }
+  }
+
+  const name = (document.getElementById("siteName").value || "CR-chantier") + ".pdf";
+  pdf.save(name);
+});
+</script>
+</body>
+</html>
